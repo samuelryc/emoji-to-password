@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Emoji to password - Samuel Ryc</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f0f0f0;
+            }
+            .emoji-table {
+                display: grid;
+                grid-template-columns: repeat(5, 1fr);
+                gap: 10px;
+                max-width: 300px;
+                margin: 0 auto;
+            }
+            .emoji {
+                cursor: pointer;
+            }
+            .emoji:hover {
+                transform: scale(1.2);
+            }
+        </style>
+    </head>
+    <body>
+        <input id="passphrase" type="password" name="passphrase" placeholder="Your passphrase..."/>
+        <input id="emoji" type="text" name="emoji" placeholder="Click an emoji to add it"/>
+
+        <div class="emoji-table">
+            <div class="emoji" onclick="addEmoji('😀')">😀</div>
+            <div class="emoji" onclick="addEmoji('😍')">😍</div>
+            <div class="emoji" onclick="addEmoji('🚀')">🚀</div>
+            <div class="emoji" onclick="addEmoji('🎉')">🎉</div>
+            <div class="emoji" onclick="addEmoji('🌈')">🌈</div>
+            <div class="emoji" onclick="addEmoji('🐱')">🐱</div>
+            <div class="emoji" onclick="addEmoji('🐶')">🐶</div>
+            <div class="emoji" onclick="addEmoji('🍕')">🍕</div>
+            <div class="emoji" onclick="addEmoji('🍔')">🍔</div>
+            <div class="emoji" onclick="addEmoji('🍦')">🍦</div>
+        </div>
+        <script>
+            function addEmoji(emoji) {
+                const emojiInput = document.getElementById("emoji");
+                emojiInput.value += emoji;
+            }
+
+            function emojiToPassword(emoji) {
+                const passphrase = 'MySecretPassphrase';
+
+                // Convert emoji to UTF-8 bytes
+                const encoder = new TextEncoder();
+                const emojiData = encoder.encode(emoji);
+
+                // Create a subtle crypto key from the passphrase
+                return crypto.subtle.importKey(
+                    'raw',
+                    new TextEncoder().encode(passphrase),
+                    'PBKDF2',
+                    false,
+                    ['deriveBits', 'deriveKey']
+                ).then(
+                    (key) => {
+                        // Derive a symmetric encryption key from the passphrase
+                        return crypto.subtle.deriveKey(
+                            {
+                                name: 'PBKDF2',
+                                salt: new TextEncoder().encode('salt'), // Salt for key derivation
+                                iterations: 100000,
+                                hash: 'SHA-256',
+                            },
+                            key,
+                            { name: 'AES-CBC', length: 256 }, // AES-256 in CBC mode
+                            false,
+                            ['encrypt', 'decrypt']
+                        );
+                    }
+                ).then(
+                    (derivedKey) => {
+                        // Encrypt the emoji data with the derived key using AES-CBC
+                        const iv = crypto.getRandomValues(new Uint8Array(16)); // Initialization vector
+                        return crypto.subtle.encrypt(
+                            { name: 'AES-CBC', iv: iv },
+                            derivedKey,
+                            emojiData
+                        ).then(
+                            (encryptedEmoji) => {
+                                // Combine the IV and encrypted data into a single array
+                                const combinedData = new Uint8Array(iv.length + encryptedEmoji.byteLength);
+                                combinedData.set(iv);
+                                combinedData.set(new Uint8Array(encryptedEmoji), iv.length);
+
+                                const password = btoa(String.fromCharCode.apply(null, combinedData));
+                                return password;
+                            }
+                        );
+                    }
+                );
+            }
+
+            function passwordToEmoji(password) {
+                const passphrase = 'MySecretPassphrase';
+
+                // Decode the "password" to get the combined data (IV + encrypted emoji)
+                const combinedData = new Uint8Array(
+                    atob(password).split('').map(
+                        (c) => c.charCodeAt(0)
+                    )
+                );
+
+                // Extract the IV and encrypted data
+                const iv = combinedData.slice(0, 16);
+                const encryptedEmoji = combinedData.slice(16);
+
+                // Create a subtle crypto key from the passphrase
+                return crypto.subtle.importKey(
+                    'raw',
+                    new TextEncoder().encode(passphrase),
+                    'PBKDF2',
+                    false,
+                    ['deriveBits', 'deriveKey']
+                ).then(
+                    (key) => {
+                        // Derive the same symmetric encryption key from the passphrase
+                        return crypto.subtle.deriveKey(
+                            {
+                                name: 'PBKDF2',
+                                salt: new TextEncoder().encode('salt'), // Salt for key derivation
+                                iterations: 100000,
+                                hash: 'SHA-256',
+                            },
+                            key,
+                            { name: 'AES-CBC', length: 256 }, // AES-256 in CBC mode
+                            false,
+                            ['encrypt', 'decrypt']
+                        );
+                    }
+                ).then(
+                    (derivedKey) => {
+                        // Decrypt the emoji data using the derived key and IV
+                        return crypto.subtle.decrypt(
+                            { name: 'AES-CBC', iv: iv },
+                            derivedKey,
+                            encryptedEmoji
+                        ).then(
+                            (decryptedEmoji) => {
+                                // Convert the decrypted data back to an emoji
+                                const decoder = new TextDecoder();
+                                return decoder.decode(decryptedEmoji);
+                            }
+                        );
+                    }
+                );
+            }
+
+            const emoji = '😀';
+            emojiToPassword(emoji).then(
+                (password) => {
+                    console.log('Emoji:', emoji);
+                    console.log('Encrypted Password:', password);
+
+                    passwordToEmoji(password).then(
+                        (decryptedEmoji) => {
+                            console.log('Decrypted Emoji:', decryptedEmoji);
+                        }
+                    );
+                }
+            );
+        </script>
+    </body>
+</html>
